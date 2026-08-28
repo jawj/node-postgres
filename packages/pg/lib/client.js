@@ -3,7 +3,7 @@ const utils = require('./utils')
 const nodeUtils = require('util')
 const sasl = require('./crypto/sasl')
 const { checkAuthRequest, resolveAuthRequirement } = require('./require-auth')
-const { normalizeChannelBinding } = require('./channel-binding')
+const { validatedChannelBinding, channelBindingFromDeprecatedBoolean } = require('./channel-binding')
 const TypeOverrides = require('./type-overrides')
 
 const ConnectionParameters = require('./connection-parameters')
@@ -91,10 +91,10 @@ class Client extends EventEmitter {
     // enableChannelBinding options and the PGCHANNELBINDING environment variable.
     this._channelBinding = this.connectionParameters.channel_binding
     // What the server has to do to authenticate itself, from require_auth and
-    // channel_binding, or null if any supported method will do
+    // channel_binding, or null if any supported method will do.
     this._authRequirement = this.connectionParameters.authRequirement
     // Whether the client has done all the authenticating it is going to do, and whether
-    // that included binding the exchange to the server's certificate
+    // that included binding the exchange to the server's certificate.
     this._authFinished = false
     this._channelBound = false
     // Whether a requirement has been broken, which nothing later can put right. Anything
@@ -103,6 +103,7 @@ class Client extends EventEmitter {
     // loop, and Connection#end() sends its Terminate before ending the stream, so a write
     // that arrived in the meantime would still reach the server.
     this._authAborted = false
+
     this.scramMaxIterations = coerceNumberOrDefault(c.scramMaxIterations, sasl.DEFAULT_MAX_SCRAM_ITERATIONS)
     this.connection =
       c.connection ||
@@ -139,11 +140,9 @@ class Client extends EventEmitter {
   }
 
   // Changing the level after construction re-derives what the server has to do, so that
-  // the two cannot come to disagree over whether channel binding is mandatory. The value
-  // is checked as it would have been in the constructor, so that a level this client does
-  // not know cannot pass for the weakest one.
+  // the two cannot come to disagree over whether channel binding is mandatory.
   set channelBinding(value) {
-    this._channelBinding = normalizeChannelBinding(value)
+    this._channelBinding = validatedChannelBinding(value)
     this._authRequirement = resolveAuthRequirement(this.connectionParameters.require_auth, this._channelBinding)
   }
 
@@ -155,7 +154,7 @@ class Client extends EventEmitter {
   }
 
   set enableChannelBinding(value) {
-    this.channelBinding = value
+    this.channelBinding = channelBindingFromDeprecatedBoolean(value)
   }
 
   get activeQuery() {
