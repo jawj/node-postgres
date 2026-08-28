@@ -44,38 +44,43 @@ const startClient = function (config = {}, { tls = false } = {}) {
   // refused connection from one that was refused and then reported as connected anyway
   const callbacks = []
   const connects = []
+  let errorPromise
+  let resolveError
+
+  const waitForError = function () {
+    if (errors.length > 0) {
+      return Promise.resolve(errors[0])
+    }
+    if (!errorPromise) {
+      errorPromise = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timed out waiting for the client to report an error')), 2000)
+        resolveError = (err) => {
+          clearTimeout(timer)
+          resolve(err)
+        }
+      })
+    }
+    return errorPromise
+  }
+
   client.on('connect', () => connects.push(true))
   client.connect((err) => {
     callbacks.push(err)
-    if (err) errors.push(err)
+    if (err) {
+      errors.push(err)
+      if (resolveError) {
+        resolveError(err)
+      }
+    }
   })
   stream.packets.length = 0
 
-  return { client, stream, errors, callbacks, connects }
+  return { client, stream, errors, callbacks, connects, waitForError }
 }
 
 // Sends a message from the server to the client
 const send = function ({ client }, name, msg = {}) {
   client.connection.emit(name, msg)
-}
-
-const until = async function (predicate, description) {
-  const deadline = Date.now() + 2000
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${description}`)
-    await new Promise((resolve) => setImmediate(resolve))
-  }
-}
-
-// Authentication handlers do real crypto, so their answers have to be waited for rather
-// than assumed to have arrived by the next tick
-const awaitPackets = function ({ stream }, count) {
-  return until(() => stream.packets.length >= count, `the client to send ${count} packet(s)`)
-}
-
-const awaitError = async function ({ errors }) {
-  await until(() => errors.length > 0, 'the client to report an error')
-  return errors[0]
 }
 
 // Long enough that a handler which was going to answer would have done so, so that
@@ -127,7 +132,7 @@ const parseSASLInitialResponse = function (packet) {
 // and reports what the client chose to do
 const runSASLExchange = async function (connecting, mechanisms) {
   send(connecting, 'authenticationSASL', { mechanisms })
-  await awaitPackets(connecting, 1)
+  await connecting.stream.awaitPacketCount(1)
 
   const { mechanism, response } = parseSASLInitialResponse(connecting.stream.packets[0])
   const clientNonce = response
@@ -136,7 +141,7 @@ const runSASLExchange = async function (connecting, mechanisms) {
     .slice(2)
 
   send(connecting, 'authenticationSASLContinue', { data: scramServer.firstMessage(clientNonce) })
-  await awaitPackets(connecting, 2)
+  await connecting.stream.awaitPacketCount(2)
 
   const clientFinalMessage = connecting.stream.packets[1].subarray(5).toString()
   const withoutProof = clientFinalMessage.slice(0, clientFinalMessage.indexOf(',p='))
@@ -155,7 +160,7 @@ suite.test('a cleartext password request is answered by default', async function
   const connecting = startClient()
 
   send(connecting, 'authenticationCleartextPassword')
-  await awaitPackets(connecting, 1)
+  await connecting.stream.awaitPacketCount(1)
   send(connecting, 'authenticationOk')
   await awaitQuiet()
 
@@ -167,7 +172,7 @@ suite.test('an md5 password request is answered by default', async function () {
   const connecting = startClient()
 
   send(connecting, 'authenticationMD5Password', { salt: Buffer.from([1, 2, 3, 4]) })
-  await awaitPackets(connecting, 1)
+  await connecting.stream.awaitPacketCount(1)
   send(connecting, 'authenticationOk')
   await awaitQuiet()
 
@@ -202,7 +207,7 @@ suite.test('channel_binding=require refuses a cleartext password request', async
   const connecting = startClient({ ssl: true, channel_binding: 'require' }, { tls: true })
 
   send(connecting, 'authenticationCleartextPassword')
-  const error = await awaitError(connecting)
+  const error = await connecting.waitForError()
   await awaitQuiet()
 
   assert.strictEqual(error.message, 'The server requested password authentication, but channel_binding=require was set')
@@ -215,7 +220,7 @@ suite.test('channel_binding=require refuses an md5 password request', async func
   const connecting = startClient({ ssl: true, channel_binding: 'require' }, { tls: true })
 
   send(connecting, 'authenticationMD5Password', { salt: Buffer.from([1, 2, 3, 4]) })
-  const error = await awaitError(connecting)
+  const error = await connecting.waitForError()
   await awaitQuiet()
 
   assert.strictEqual(error.message, 'The server requested md5 authentication, but channel_binding=require was set')
@@ -226,7 +231,7 @@ suite.test('channel_binding=require refuses an immediate AuthenticationOk', asyn
   const connecting = startClient({ ssl: true, channel_binding: 'require' }, { tls: true })
 
   send(connecting, 'authenticationOk')
-  const error = await awaitError(connecting)
+  const error = await connecting.waitForError()
 
   assert.strictEqual(
     error.message,
@@ -240,7 +245,7 @@ suite.test('channel_binding=require refuses an exchange that cannot be bound', a
 
   // a server that offers only the mechanism without channel binding
   send(connecting, 'authenticationSASL', { mechanisms: ['SCRAM-SHA-256'] })
-  const error = await awaitError(connecting)
+  const error = await connecting.waitForError()
   await awaitQuiet()
 
   assert.match(error.message, /Channel binding is required, but the server did not offer/)
@@ -292,7 +297,7 @@ suite.test('requiring channel binding after construction is enforced too', async
   connecting.client.enableChannelBinding = 'require'
 
   send(connecting, 'authenticationCleartextPassword')
-  const error = await awaitError(connecting)
+  const error = await connecting.waitForError()
   await awaitQuiet()
 
   assert.strictEqual(error.message, 'The server requested password authentication, but channel_binding=require was set')
@@ -320,7 +325,7 @@ suite.test('require_auth=scram-sha-256 refuses a cleartext password request', as
   const connecting = startClient({ require_auth: 'scram-sha-256' })
 
   send(connecting, 'authenticationCleartextPassword')
-  const error = await awaitError(connecting)
+  const error = await connecting.waitForError()
   await awaitQuiet()
 
   assert.strictEqual(
@@ -334,7 +339,7 @@ suite.test('require_auth=scram-sha-256 refuses an AuthenticationOk before any ex
   const connecting = startClient({ require_auth: 'scram-sha-256' })
 
   send(connecting, 'authenticationOk')
-  const error = await awaitError(connecting)
+  const error = await connecting.waitForError()
 
   assert.strictEqual(
     error.message,
@@ -358,14 +363,14 @@ suite.test('require_auth=scram-sha-256 completes an unbound exchange without SSL
 suite.test('require_auth=password answers a cleartext request but refuses md5', async function () {
   const answering = startClient({ require_auth: 'password' })
   send(answering, 'authenticationCleartextPassword')
-  await awaitPackets(answering, 1)
+  await answering.stream.awaitPacketCount(1)
 
   assert.deepStrictEqual(answering.errors, [])
   assert.deepStrictEqual(sentTypes(answering), ['p'])
 
   const refusing = startClient({ require_auth: 'password' })
   send(refusing, 'authenticationMD5Password', { salt: Buffer.from([1, 2, 3, 4]) })
-  await awaitError(refusing)
+  await refusing.waitForError()
   await awaitQuiet()
 
   assert.deepStrictEqual(sentTypes(refusing), ['X'])
@@ -374,7 +379,7 @@ suite.test('require_auth=password answers a cleartext request but refuses md5', 
 suite.test('require_auth=!password refuses a cleartext request but answers md5', async function () {
   const refusing = startClient({ require_auth: '!password' })
   send(refusing, 'authenticationCleartextPassword')
-  const error = await awaitError(refusing)
+  const error = await refusing.waitForError()
   await awaitQuiet()
 
   assert.strictEqual(
@@ -385,7 +390,7 @@ suite.test('require_auth=!password refuses a cleartext request but answers md5',
 
   const answering = startClient({ require_auth: '!password' })
   send(answering, 'authenticationMD5Password', { salt: Buffer.from([1, 2, 3, 4]) })
-  await awaitPackets(answering, 1)
+  await answering.stream.awaitPacketCount(1)
 
   assert.deepStrictEqual(answering.errors, [])
   assert.deepStrictEqual(sentTypes(answering), ['p'])
@@ -414,7 +419,7 @@ suite.test('a password provider is not consulted for a refused request', async f
   })
 
   send(connecting, 'authenticationCleartextPassword')
-  await awaitError(connecting)
+  await connecting.waitForError()
   await awaitQuiet()
 
   assert.strictEqual(consulted, false)
@@ -456,7 +461,7 @@ suite.test('a refused SCRAM exchange is not rescued by a pipelined login', async
   // The server offers only the mechanism that cannot be bound, so the client refuses to
   // begin, and then it declares the client logged in as though nothing had happened.
   send(connecting, 'authenticationSASL', { mechanisms: ['SCRAM-SHA-256'] })
-  await awaitError(connecting)
+  await connecting.waitForError()
   sendSuccessfulLogin(connecting)
   await awaitQuiet()
 
@@ -469,9 +474,17 @@ suite.test('a refused SCRAM exchange is not rescued by a pipelined login', async
 
 suite.test('an asynchronous password lookup is not answered once a refusal has happened', async function () {
   let release
+  let passwordRequested
+  const passwordPromise = new Promise((resolve) => {
+    passwordRequested = resolve
+  })
   const connecting = startClient({
     require_auth: 'password',
-    password: () => new Promise((resolve) => (release = () => resolve(password))),
+    password: () =>
+      new Promise((resolve) => {
+        passwordRequested()
+        release = () => resolve(password)
+      }),
   })
 
   // The request is permitted, so the lookup begins...
@@ -479,8 +492,8 @@ suite.test('an asynchronous password lookup is not answered once a refusal has h
   // ...but the same packet held a request that is not, and by the time the credential
   // service answers there is nothing left to answer with.
   send(connecting, 'authenticationMD5Password', { salt: Buffer.from([1, 2, 3, 4]) })
-  const error = await awaitError(connecting)
-  await until(() => release !== undefined, 'the password to be asked for')
+  const error = await connecting.waitForError()
+  await passwordPromise
   release()
   await awaitQuiet()
 
@@ -492,7 +505,7 @@ suite.test('a second authentication request is refused after the first was', asy
   const connecting = startClient({ require_auth: 'scram-sha-256' })
 
   send(connecting, 'authenticationCleartextPassword')
-  await awaitError(connecting)
+  await connecting.waitForError()
 
   // Asking again with a method the setting does permit gets the server no further: the
   // connection has been given up on, so there is nothing left to answer with.
@@ -512,7 +525,7 @@ suite.test('a request that follows finished authentication is refused', async fu
   // it. Nothing this client is configured with, up to and including require_auth, permits
   // a second request, so this holds for a default configuration as much as a strict one.
   send(connecting, 'authenticationCleartextPassword')
-  const error = await awaitError(connecting)
+  const error = await connecting.waitForError()
   await awaitQuiet()
 
   assert.match(error.message, /already authenticated/)
@@ -528,7 +541,7 @@ suite.test('a query queued before a refusal is not sent to the server', async fu
   connecting.client.query('SELECT $1::text', ['a secret']).catch(() => {})
 
   send(connecting, 'authenticationCleartextPassword')
-  await awaitError(connecting)
+  await connecting.waitForError()
   // The rest of a login the server had already pipelined behind its refused request.
   send(connecting, 'backendKeyData', { processID: 1, secretKey: 2 })
   send(connecting, 'readyForQuery', { status: 'I' })
@@ -555,7 +568,7 @@ suite.test('a server that skips authentication altogether satisfies nothing', as
     // certificate this client was willing to accept, just says the client is in.
     send(connecting, 'backendKeyData', { processID: 1, secretKey: 2 })
     send(connecting, 'readyForQuery', { status: 'I' })
-    const error = await awaitError(connecting)
+    const error = await connecting.waitForError()
 
     assert.match(error.message, message)
     assert.deepStrictEqual(connecting.connects, [], 'no connect event should be emitted')
@@ -575,7 +588,7 @@ suite.test('an md5 hash computed before a refusal is not sent after it', async f
   send(connecting, 'authenticationMD5Password', { salt: Buffer.from([1, 2, 3, 4]) })
   // Refused, from the same packet, while the hash is still being computed
   send(connecting, 'authenticationCleartextPassword')
-  await awaitError(connecting)
+  await connecting.waitForError()
   await awaitQuiet()
 
   assert.deepStrictEqual(sentTypes(connecting), ['X'], 'the hash must not follow the Terminate')
@@ -585,7 +598,7 @@ suite.test('a SCRAM proof computed before a refusal is not sent after it', async
   const connecting = startClient({ require_auth: 'scram-sha-256' })
 
   send(connecting, 'authenticationSASL', { mechanisms: ['SCRAM-SHA-256'] })
-  await awaitPackets(connecting, 1)
+  await connecting.stream.awaitPacketCount(1)
   const { response } = parseSASLInitialResponse(connecting.stream.packets[0])
   const clientNonce = response
     .split(',')
@@ -596,7 +609,7 @@ suite.test('a SCRAM proof computed before a refusal is not sent after it', async
   send(connecting, 'authenticationSASLContinue', { data: scramServer.firstMessage(clientNonce) })
   // ...and the server breaks the requirement while that is still going on
   send(connecting, 'authenticationCleartextPassword')
-  await awaitError(connecting)
+  await connecting.waitForError()
   await awaitQuiet()
 
   assert.deepStrictEqual(sentTypes(connecting), ['p', 'X'], 'the proof must not follow the Terminate')
@@ -607,7 +620,7 @@ suite.test('an exchange in progress is not continued after a refusal', async fun
 
   // The exchange begins, as the setting permits it to
   send(connecting, 'authenticationSASL', { mechanisms: ['SCRAM-SHA-256'] })
-  await awaitPackets(connecting, 1)
+  await connecting.stream.awaitPacketCount(1)
   const { response } = parseSASLInitialResponse(connecting.stream.packets[0])
   const clientNonce = response
     .split(',')

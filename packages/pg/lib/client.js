@@ -139,16 +139,13 @@ class Client extends EventEmitter {
     return this._channelBinding
   }
 
-  // Changing the level after construction re-derives what the server has to do, so that
-  // the two cannot come to disagree over whether channel binding is mandatory.
+  // Changing the level after construction re-derives what the server has to do
   set channelBinding(value) {
     this._channelBinding = validatedChannelBinding(value)
     this._authRequirement = resolveAuthRequirement(this.connectionParameters.require_auth, this._channelBinding)
   }
 
-  // Kept in step with channelBinding, since this was the option's original name and
-  // shape. Levels pass through, so assigning 'require' does not weaken to 'prefer', and
-  // booleans mean what they always did.
+  // Kept in step with channelBinding: this was the option's original name
   get enableChannelBinding() {
     return this.channelBinding !== 'disable'
   }
@@ -387,11 +384,7 @@ class Client extends EventEmitter {
     }
 
     // Authentication happens once. The server asks for one method and then says whether
-    // it was enough, so a further request means a server after something it has not been
-    // given: the password itself, say, from a client that had proved knowing it through
-    // SCRAM. Postgres stores only a SCRAM verifier, and someone in the middle holding a
-    // stolen one can complete that exchange, so what is asked for here is worth refusing
-    // whatever require_auth says.
+    // it was enough: a further request is suspicious.
     if (this._authFinished && method !== 'none') {
       this._abortAuthentication(
         new Error(`The server requested ${method} authentication after the client had already authenticated`)
