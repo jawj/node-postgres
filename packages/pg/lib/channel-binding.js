@@ -15,18 +15,16 @@ const emitEnableChannelBindingDeprecationNotice = nodeUtils.deprecate(
 )
 
 function channelBindingFromDeprecatedBoolean(value) {
-  if (value === undefined) return  // undefined passes straight through, no warning
-  emitEnableChannelBindingDeprecationNotice();
+  if (value === undefined) return // undefined passes straight through, no warning
+  emitEnableChannelBindingDeprecationNotice()
   // note: we pass through valid string values to avoid confusion, otherwise
   // "disable" and "require" would both resolve as truthy and mean "prefer"
-  return channelBindingLevels.includes(value) ? value : (value ? 'prefer' : 'disable')
+  return channelBindingLevels.includes(value) ? value : value ? 'prefer' : 'disable'
 }
 
 function validatedChannelBinding(value) {
   if (!channelBindingLevels.includes(value)) {
-    throw new Error(
-      `Invalid channel_binding value: "${value}". Valid values are "disable", "prefer" and "require".`
-    )
+    throw new Error(`Invalid channel_binding value: "${value}". Valid values are "disable", "prefer" and "require".`)
   }
   return value
 }
@@ -41,4 +39,9 @@ function resolveChannelBinding(channelBinding, enableChannelBinding) {
   return validatedChannelBinding(value)
 }
 
-module.exports = { channelBindingLevels, channelBindingFromDeprecatedBoolean, validatedChannelBinding, resolveChannelBinding }
+module.exports = {
+  channelBindingLevels,
+  channelBindingFromDeprecatedBoolean,
+  validatedChannelBinding,
+  resolveChannelBinding,
+}

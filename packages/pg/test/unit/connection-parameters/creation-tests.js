@@ -504,10 +504,7 @@ suite.test('channel_binding is included in libpq connection string when it is no
   subject.getLibpqConnectionString(
     assert.calls(function (err, pgCString) {
       assert.ifError(err)
-      assert(
-        pgCString.includes("channel_binding='require'"),
-        'libpqConnectionString should contain channel_binding'
-      )
+      assert(pgCString.includes("channel_binding='require'"), 'libpqConnectionString should contain channel_binding')
     })
   )
 })
