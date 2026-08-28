@@ -63,6 +63,12 @@ const startClient = function (config = {}, { tls = false } = {}) {
     return errorPromise
   }
 
+  const waitForSuccess = function () {
+    return new Promise((resolve) => setTimeout(resolve, 25)).then(() => {
+      assert.deepStrictEqual(errors, [])
+    })
+  }
+
   client.on('connect', () => connects.push(true))
   client.connect((err) => {
     callbacks.push(err)
@@ -75,7 +81,7 @@ const startClient = function (config = {}, { tls = false } = {}) {
   })
   stream.packets.length = 0
 
-  return { client, stream, errors, callbacks, connects, waitForError }
+  return { client, stream, errors, callbacks, connects, waitForError, waitForSuccess }
 }
 
 // Sends a message from the server to the client
@@ -162,9 +168,7 @@ suite.test('a cleartext password request is answered by default', async function
   send(connecting, 'authenticationCleartextPassword')
   await connecting.stream.awaitPacketCount(1)
   send(connecting, 'authenticationOk')
-  await awaitQuiet()
-
-  assert.deepStrictEqual(connecting.errors, [])
+  await connecting.waitForSuccess()
   assert.deepStrictEqual(sentTypes(connecting), ['p'])
 })
 
@@ -174,9 +178,7 @@ suite.test('an md5 password request is answered by default', async function () {
   send(connecting, 'authenticationMD5Password', { salt: Buffer.from([1, 2, 3, 4]) })
   await connecting.stream.awaitPacketCount(1)
   send(connecting, 'authenticationOk')
-  await awaitQuiet()
-
-  assert.deepStrictEqual(connecting.errors, [])
+  await connecting.waitForSuccess()
   assert.deepStrictEqual(sentTypes(connecting), ['p'])
 })
 
@@ -185,9 +187,7 @@ suite.test('an immediate AuthenticationOk is accepted by default', async functio
   const connecting = startClient()
 
   send(connecting, 'authenticationOk')
-  await awaitQuiet()
-
-  assert.deepStrictEqual(connecting.errors, [])
+  await connecting.waitForSuccess()
   assert.deepStrictEqual(sentTypes(connecting), [])
 })
 
@@ -196,9 +196,7 @@ suite.test('a SCRAM exchange is completed by default', async function () {
 
   const exchange = await runSASLExchange(connecting, ['SCRAM-SHA-256'])
   send(connecting, 'authenticationOk')
-  await awaitQuiet()
-
-  assert.deepStrictEqual(connecting.errors, [])
+  await connecting.waitForSuccess()
   assert.strictEqual(exchange.mechanism, 'SCRAM-SHA-256')
   assert.strictEqual(connecting.client._authFinished, true)
 })
@@ -257,9 +255,7 @@ suite.test('channel_binding=require completes a bound SCRAM-SHA-256-PLUS exchang
 
   const exchange = await runSASLExchange(connecting, ['SCRAM-SHA-256', 'SCRAM-SHA-256-PLUS'])
   send(connecting, 'authenticationOk')
-  await awaitQuiet()
-
-  assert.deepStrictEqual(connecting.errors, [])
+  await connecting.waitForSuccess()
   assert.strictEqual(exchange.mechanism, 'SCRAM-SHA-256-PLUS')
   assert.strictEqual(exchange.gs2Header, 'p=tls-server-end-point')
   // the binding data carries the certificate hash, not just the gs2 header
@@ -352,9 +348,7 @@ suite.test('require_auth=scram-sha-256 completes an unbound exchange without SSL
 
   const exchange = await runSASLExchange(connecting, ['SCRAM-SHA-256'])
   send(connecting, 'authenticationOk')
-  await awaitQuiet()
-
-  assert.deepStrictEqual(connecting.errors, [])
+  await connecting.waitForSuccess()
   assert.strictEqual(exchange.mechanism, 'SCRAM-SHA-256')
   assert.strictEqual(exchange.gs2Header, 'n')
   assert.strictEqual(connecting.client._authFinished, true)
@@ -400,9 +394,7 @@ suite.test('require_auth=none accepts an immediate AuthenticationOk', async func
   const connecting = startClient({ require_auth: 'none' })
 
   send(connecting, 'authenticationOk')
-  await awaitQuiet()
-
-  assert.deepStrictEqual(connecting.errors, [])
+  await connecting.waitForSuccess()
   assert.deepStrictEqual(sentTypes(connecting), [])
 })
 
