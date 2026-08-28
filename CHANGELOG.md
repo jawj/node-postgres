@@ -4,7 +4,7 @@ For richer information consult the commit log on github with referenced pull req
 
 We do not include break-fix version release in this file.
 
-## pg@8.24.0
+## Unreleased
 
 - Add support for the `channel_binding` connection parameter (in a connection string, the client config or `PGCHANNELBINDING`): `"disable"`, `"prefer"` or `"require"`, following libpq. Also change default from `disable` to `prefer`, so channel binding is used whenever the server offers it. The previous `enableChannelBinding` boolean option is retained but deprecated: `true` maps to `"prefer"`.
 - Also add support for the `require_auth`/`PGREQUIREAUTH`  connection parameter, which specifies which authentication method(s) the client will accept from the server.
