@@ -288,7 +288,51 @@ suite.test('the enableChannelBinding option still turns channel binding on', asy
   assert.strictEqual(exchange.mechanism, 'SCRAM-SHA-256-PLUS')
 })
 
-suite.test('requiring channel binding after construction is enforced too', async function () {
+suite.test('enableChannelBinding takes truthy/falsy and valid string values', function () {
+  const { client } = startClient({ ssl: true }, { tls: true })
+
+  client.enableChannelBinding = false
+  assert.strictEqual(client.channelBinding, 'disable')
+
+  client.enableChannelBinding = true
+  assert.strictEqual(client.channelBinding, 'prefer')
+
+  client.enableChannelBinding = 'disable'
+  assert.strictEqual(client.channelBinding, 'disable')
+
+  client.enableChannelBinding = 'prefer'
+  assert.strictEqual(client.channelBinding, 'prefer')
+
+  client.enableChannelBinding = 'require'
+  assert.strictEqual(client.channelBinding, 'require')
+
+  for (const value of ['Require', 'required', 'prefer ', 'xyz']) {
+    client.enableChannelBinding = value
+    assert.strictEqual(
+      client.channelBinding,
+      'prefer',
+      'truthy enableChannelBinding values should evaluate to "prefer"'
+    )
+  }
+
+  for (const value of ['', null, undefined]) {
+    client.enableChannelBinding = value
+    assert.strictEqual(
+      client.channelBinding,
+      'disable',
+      'falsy enableChannelBinding values should evaluate to "disable"'
+    )
+  }
+})
+
+suite.test('attempting to set channelBinding after construction throws', function () {
+  const { client } = startClient({ ssl: true }, { tls: true })
+  assert.throws(() => {
+    client.channelBinding = 'require'
+  }, /channelBinding cannot be set on Client after construction/)
+})
+
+suite.test('setting enableChannelBinding after construction is enforced', async function () {
   const connecting = startClient({ ssl: true }, { tls: true })
   connecting.client.enableChannelBinding = 'require'
 
@@ -298,23 +342,6 @@ suite.test('requiring channel binding after construction is enforced too', async
 
   assert.strictEqual(error.message, 'The server requested password authentication, but channel_binding=require was set')
   assert.deepStrictEqual(sentTypes(connecting), ['X'])
-})
-
-suite.test('a channel binding level set after construction is checked as one given to it', function () {
-  const { client } = startClient({ ssl: true }, { tls: true })
-
-  for (const value of ['Require', 'required', 'prefer ', '']) {
-    assert.throws(() => {
-      client.channelBinding = value
-    }, /Invalid channel_binding value/)
-    assert.strictEqual(client.channelBinding, 'prefer', 'a refused value should not take effect')
-  }
-
-  // The option's original shape, which was a boolean, still means what it did.
-  client.enableChannelBinding = false
-  assert.strictEqual(client.channelBinding, 'disable')
-  client.enableChannelBinding = true
-  assert.strictEqual(client.channelBinding, 'prefer')
 })
 
 suite.test('require_auth=scram-sha-256 refuses a cleartext password request', async function () {

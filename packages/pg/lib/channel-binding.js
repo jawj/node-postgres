@@ -14,8 +14,8 @@ const emitEnableChannelBindingDeprecationNotice = nodeUtils.deprecate(
   'enableChannelBinding is deprecated: instead, please set channel_binding to "disable", "prefer" or "require"'
 )
 
-function channelBindingFromDeprecatedBoolean(value) {
-  if (value === undefined) return // undefined passes straight through, no warning
+function channelBindingFromDeprecatedBoolean(value, force = false) {
+  if (value === undefined && !force) return // pass undefined straight through, no warning, unless forced
   emitEnableChannelBindingDeprecationNotice()
   // note: we pass through valid string values to avoid confusion, otherwise
   // "disable" and "require" would both resolve as truthy and mean "prefer"

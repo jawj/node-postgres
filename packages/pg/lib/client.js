@@ -139,19 +139,22 @@ class Client extends EventEmitter {
     return this._channelBinding
   }
 
-  // Changing the level after construction re-derives what the server has to do
-  set channelBinding(value) {
-    this._channelBinding = validatedChannelBinding(value)
-    this._authRequirement = resolveAuthRequirement(this.connectionParameters.require_auth, this._channelBinding)
+  // If we omit this setter, attempts to set channelBinding fail silently
+  // outside of strict mode code, which may be a security issue
+  set channelBinding(_value) {
+    throw new Error('channelBinding cannot be set on Client after construction')
   }
 
-  // Kept in step with channelBinding: this was the option's original name
+  // For backward-compatibility (returns boolean: false for 'disable', true otherwise)
   get enableChannelBinding() {
     return this.channelBinding !== 'disable'
   }
 
+  // For backward-compatibility (accepts valid string and truthy/falsy values)
   set enableChannelBinding(value) {
-    this.channelBinding = channelBindingFromDeprecatedBoolean(value)
+    const channelBinding = channelBindingFromDeprecatedBoolean(value, true)
+    this._channelBinding = validatedChannelBinding(channelBinding)
+    this._authRequirement = resolveAuthRequirement(this.connectionParameters.require_auth, this._channelBinding)
   }
 
   get activeQuery() {
