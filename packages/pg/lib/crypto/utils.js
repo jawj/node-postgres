@@ -72,7 +72,10 @@ async function hashByName(hashName, text) {
       hash.update(text)
       return hash.digest()
     } catch (e2) {
-      throw new Error(`Could not hash with "${hashName}" during channel binding. SubtleCrypto: ${e1.message}, node:crypto: ${e2.message}`)
+      throw new Error(
+        `Could not hash with "${hashName}" during channel binding (SubtleCrypto: ${e1.message}, node:crypto: ${e2.message})`,
+        { cause: e2 }
+      )
     }
   }
 }

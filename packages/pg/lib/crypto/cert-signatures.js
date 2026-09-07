@@ -136,7 +136,7 @@ function signatureAlgorithmHashFromCertificate(data, index) {
       index = expectASN1Seq(data, index).index
       const tag = data[index++]
       if (tag === undefined) throw x509Error('end of data reading RSASSA-PSS parameters', data)
-      if (tag !== 0xa0) { // a0 = constructed tag 0
+      if (tag !== 0xa0 /* a0 = constructed tag [0] */) {
         // no hash indicated: SHA-1 is default per RFC 4055
         return 'SHA-1'
       }
@@ -211,7 +211,9 @@ function signatureAlgorithmHashFromCertificate(data, index) {
     case '2.16.840.1.101.3.4.3.29':
     case '2.16.840.1.101.3.4.3.30':
     case '2.16.840.1.101.3.4.3.31':
-      throw x509Error('channel binding is not supported by Postgres for certificates signed with Ed25519, Ed448, ML-DSA or SLH-DSA')
+      throw x509Error(
+        'channel binding is not supported by Postgres for certificates signed with Ed25519, Ed448, ML-DSA or SLH-DSA'
+      )
   }
   throw x509Error('unknown certificate signature OID ' + oid, data)
 }
