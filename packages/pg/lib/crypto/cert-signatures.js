@@ -77,8 +77,6 @@ function signatureAlgorithmHashFromCertificate(data, index) {
     case '1.3.14.3.2.29': // RSA
     case '1.2.840.10045.4.1': // ECDSA
       return 'SHA-1'
-    case '1.3.36.3.3.1.2': // RSA
-      return 'RIPEMD160'
     case '2.16.840.1.101.3.4.3.1': // DSA
     case '1.2.840.113549.1.1.14': // RSA
     case '1.2.840.10045.4.3.1': // ECDSA
@@ -120,11 +118,6 @@ function signatureAlgorithmHashFromCertificate(data, index) {
     case '1.2.156.10197.1.501': // SM2
     case '1.2.156.10197.1.504': // RSA
       return 'SM3'
-    case '1.2.643.2.2.3': // GOST variants
-    case '1.2.643.2.2.4':
-    case '1.2.643.2.9.1.3.3':
-    case '1.2.643.2.9.1.3.4':
-      return 'md_gost94'
     case '1.2.643.7.1.1.3.2':
       return 'md_gost12_256'
     case '1.2.643.7.1.1.3.3':
@@ -149,8 +142,6 @@ function signatureAlgorithmHashFromCertificate(data, index) {
           return 'MD5'
         case '1.3.14.3.2.26':
           return 'SHA-1'
-        case '1.3.36.3.2.1':
-          return 'RIPEMD160'
         case '2.16.840.1.101.3.4.2.1':
           return 'SHA-256'
         case '2.16.840.1.101.3.4.2.2':
@@ -173,25 +164,34 @@ function signatureAlgorithmHashFromCertificate(data, index) {
           return 'SHA3-512'
         case '1.2.156.10197.1.401':
           return 'SM3'
-        case '1.2.643.2.2.9':
-          return 'md_gost94'
         case '1.2.643.7.1.1.2.2':
           return 'md_gost12_256'
         case '1.2.643.7.1.1.2.3':
           return 'md_gost12_512'
         case '1.2.840.113549.2.2':
         case '1.2.840.113549.2.4':
-          throw x509Error('channel binding is not supported for RSASSA-PSS certificates signed with MD2 or MD4')
+        case '1.3.36.3.2.1':
+        case '1.2.643.2.2.9':
+          throw x509Error(
+            'channel binding is not supported for RSASSA-PSS certificates signed with obsolete algorithms MD2, MD4, RIPEMD160 or md_gost94'
+          )
       }
       throw x509Error('unknown RSASSA-PSS hash OID ' + hashOID, data)
     }
 
-    // obsolete
+    // obsolete and unsupported as insecure: MD5 and SHA-1 are upgraded to SHA-256, but these are not
     case '1.2.840.113549.1.1.2':
     case '1.2.840.113549.1.1.3':
     case '2.5.8.3.100':
     case '1.3.14.3.2.15':
-      throw x509Error('channel binding is not supported for certificates signed with MD2, MD4, MDC2 or SHA-0')
+    case '1.3.36.3.3.1.2':
+    case '1.2.643.2.2.3':
+    case '1.2.643.2.2.4':
+    case '1.2.643.2.9.1.3.3':
+    case '1.2.643.2.9.1.3.4':
+      throw x509Error(
+        'channel binding is not supported for certificates signed with obsolete algorithms MD2, MD4, MDC2, SHA-0, RIPEMD160 or md_gost94'
+      )
 
     // EdDSA and post-quantum crypto: no separate hash function, no Postgres support
     case '1.3.101.112':
